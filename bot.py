@@ -6,7 +6,7 @@ from ...bot import Bot
 from ...linear_math import Transform
 
 import math
-
+import numpy
 
 class DK(Bot):
     @property
@@ -18,23 +18,41 @@ class DK(Bot):
         return "Jerrel"
 
     def compute_commands(self, next_waypoint: int, position: Transform, velocity: Vector2) -> Tuple:
-        target = self.track.lines[next_waypoint]
+
+        # Amount of targets
+        nTargets = len(self.track.lines)
+        # Find target after target
+        next_next_waypoint = (next_waypoint + 2) % nTargets - 1
+
+        targetTrue = self.track.lines[next_waypoint]
+        nextTarget = self.track.lines[next_next_waypoint]
+        
         # nextTarget = self.track.lines[next_waypoint+1]
         # calculate the target in the frame of the robot
-        target = position.inverse() * target
+        target = position.inverse() * targetTrue
 
         # calculate the angle to the target
         angle = target.as_polar()[1]
 
+        a = [targetTrue[0] - nextTarget[0], targetTrue[1] - nextTarget[1]]
+        b = [targetTrue[0] - position.p[0], targetTrue[1] - position.p[1]]
+
+        lengthA = math.sqrt(a[0]**2 + a[1]**2)
+        lengthB = math.sqrt(b[0]**2 + b[1]**2)
+
+        angle2 = math.acos( numpy.dot(a,b) / ( lengthA * lengthB ) )
+
+        # print(angle2)
+
         # calculate the throttle
-        target_waypoint_velocity = 150
+        target_waypoint_velocity = ( angle2 / 3.1415 )**2 * 300
         acc = -100
 
         distToTarget = math.sqrt(target[0]**2 + target[1]**2) - self.track.track_width
         absoluteVelocity = math.sqrt(velocity[0]**2 + velocity[1]**2)
 
         bTerm = 2*acc*distToTarget + absoluteVelocity**2
-        print(absoluteVelocity)
+        # print(absoluteVelocity)
 
         if bTerm < 0:
             throttle = 1
