@@ -15,10 +15,11 @@ class DK(Bot):
 
     @property
     def contributor(self):
-        return "Nobleo"
+        return "Jerrel"
 
     def compute_commands(self, next_waypoint: int, position: Transform, velocity: Vector2) -> Tuple:
         target = self.track.lines[next_waypoint]
+        # nextTarget = self.track.lines[next_waypoint+1]
         # calculate the target in the frame of the robot
         target = position.inverse() * target
 
@@ -29,7 +30,7 @@ class DK(Bot):
         target_waypoint_velocity = 150
         acc = -100
 
-        distToTarget = math.sqrt(target[0]**2 + target[1]**2)
+        distToTarget = math.sqrt(target[0]**2 + target[1]**2) - self.track.track_width
         absoluteVelocity = math.sqrt(velocity[0]**2 + velocity[1]**2)
 
         bTerm = 2*acc*distToTarget + absoluteVelocity**2
