@@ -8,6 +8,8 @@ from ...linear_math import Transform
 
 from copy import deepcopy
 
+from scipy.optimize import minimize
+
 import math
 import numpy
 
@@ -26,11 +28,75 @@ class DK(Bot):
     
     def __init__(self, track):
         Bot.__init__(self, track)
-        self.velList, self.angleList = self.compute_section_velocities()
         self._font = pygame.font.SysFont(None, 24)
-        self.optimSetpoints = self.compute_optimal_raceline(self.track.lines, 15)
-        self.tempAngleList = [0]
-        self.tempVelList = [0]
+        # self.optimSetpoints = self.compute_optimal_raceline(self.track.lines, 15)
+        self.optimSetpoints = self.optimize_raceline(self.track.lines, self.track.track_width*.8)
+        self.velList, self.angleList = self.compute_section_velocities(self.optimSetpoints)
+        # self.velList, self.angleList = self.compute_section_velocities(self.track.lines)
+
+        # self.tempAngleList = [0]
+        # self.tempVelList = [0]
+
+    def raceline_objective(self, checkpoints, n_points=100):
+        """Objective function to minimize the curvature of the raceline."""
+        # x = checkpoints[::2]
+        # y = checkpoints[1::2]
+        
+        # Ensure the raceline forms a loop by repeating the first point
+        # x = np.append(x, x[0])
+        # y = np.append(y, y[0])
+        
+        # Fit a cubic spline through the checkpoints to get a smooth raceline
+        # spline = CubicSpline(np.linspace(0, 1, len(x)), np.vstack((x, y)), axis=1, bc_type='periodic')
+        
+        # Sample points along the spline
+        # t_values = np.linspace(0, 1, n_points)
+        # raceline_x, raceline_y = spline(t_values)
+        
+        # Compute curvature
+        # curvature = compute_curvature(raceline_x, raceline_y)
+        # racelineCheckpoints = [raceline_x, raceline_y]
+
+        new_checkpoints = deepcopy(checkpoints.reshape(-1, 2))
+
+
+
+        curvature = 3.1415 - np.array(self.compute_section_velocities(new_checkpoints)[1])
+        
+        # Minimize the sum of curvature
+        return np.sum(curvature**2)
+
+    def optimize_raceline(self, checkpoints, r, n_points=100):
+        """
+        Optimize the raceline by moving the checkpoints within a radius `r`.
+        
+        Parameters:
+        - checkpoints: A list of (x, y) tuples of checkpoints [(x1, y1), (x2, y2), ...]
+        - r: Maximum distance each checkpoint can move from its original position.
+        - n_points: Number of points used for smoothing the raceline.
+        
+        Returns:
+        - optimized_raceline: Optimized (x, y) positions of the checkpoints.
+        """
+
+        checkpoints = [(q.x, q.y) for q in checkpoints]
+
+        initial_checkpoints = np.array(checkpoints).flatten()
+        
+        def constraint_func(checkpoints):
+            """Ensure that each checkpoint stays within radius r of the original."""
+            new_checkpoints = checkpoints.reshape(-1, 2)
+            original_checkpoints = np.array(initial_checkpoints).reshape(-1, 2)
+            return r - np.linalg.norm(new_checkpoints - original_checkpoints, axis=1)
+
+        constraints = [{'type': 'ineq', 'fun': constraint_func}]
+        
+        # Optimize the raceline by minimizing curvature
+        result = minimize(self.raceline_objective, initial_checkpoints, args=(n_points,), constraints=constraints, method='SLSQP')
+        
+        # Reshape the result into x, y coordinates
+        optimized_checkpoints = result.x.reshape(-1, 2)
+        return [(a,b) for a, b in optimized_checkpoints]
     
     def compute_circle_radius(self, p1, p2, p3):
         
@@ -61,13 +127,14 @@ class DK(Bot):
     def convert_angle_to_speed(self,angle):
 
         angleInterp = [0, 0.5, 1  , 1.5, 2  , 2.5, 3  , 3.1415]
-        velInterp =   [0,  50, 110, 130, 180, 260, 410, 999   ]
+        velInterp =   [0,  50, 110, 130, 170, 200, 430, 999   ]
 
         return numpy.interp(angle,angleInterp,velInterp)
+        # return ( angle / 3.1415 )**2 * 300
     
-    def compute_section_velocities(self):
+    def compute_section_velocities(self, checkpoints):
 
-        nTargets = len(self.track.lines)
+        nTargets = len(checkpoints)
 
         angleList = [0] * nTargets
         velList = [0] * nTargets
@@ -80,9 +147,9 @@ class DK(Bot):
             id2 = (section - 1) % (nTargets - 1)
             id3 = (section + 2) % (nTargets - 1)
 
-            point1 = self.track.lines[id1]
-            point2 = self.track.lines[id2]
-            point3 = self.track.lines[id3]
+            point1 = checkpoints[id1]
+            point2 = checkpoints[id2]
+            point3 = checkpoints[id3]
 
             a = [point1[0] - point2[0], point1[1] - point2[1]]
             b = [point1[0] - point3[0], point1[1] - point3[1]]
@@ -124,66 +191,11 @@ class DK(Bot):
         self.tempAngleList[next_waypoint] = math.acos( numpy.dot(a,b) / ( lengthA * lengthB ) )
         self.tempVelList[next_waypoint]   = self.convert_angle_to_speed(self.tempAngleList[next_waypoint])
 
-        # velList[section] = ( angleList[section] / 3.1415 )**2 * 400
-
-        # angleInterp = [0, 1.62, 2.32, 2.5 , 3.1415]
-        # velInterp =   [0, 150,  250,  300 , 999]
-
-    def compute_optimal_raceline(self, checkpoints, r):
-        """
-        Computes the optimal raceline through a set of checkpoints.
-        
-        Parameters:
-        - checkpoints: List of tuples (x, y) representing the coordinates of the middle of the track.
-        - r: The width of the track (distance from the center to the edge).
-        
-        Returns:
-        - optimal_path: List of (x, y) coordinates representing the optimal raceline.
-        """
-        n = len(checkpoints)
-        
-        if n == 0:
-            return []
-        
-        # Positions for edges of the track
-        edge_positions = []
-        for (x, y) in checkpoints:
-            edge_positions.append([(x, y + r), (x, y - r)])  # Upper and Lower edges
-
-        # Initialize the DP table
-        dp = np.inf * np.ones((n, 2))  # Two edges per checkpoint
-        dp[0, 0] = 0  # Starting from the upper edge of the first checkpoint (outer edge)
-        dp[0, 1] = np.inf  # We will not consider starting from the lower edge
-
-        # To reconstruct the path later
-        path = np.zeros((n, 2), dtype=int)
-
-        # Dynamic programming to find minimum distances
-        for i in range(1, n):
-            for j in range(2):  # Previous edge (0: upper, 1: lower)
-                for k in range(2):  # Current edge
-                    distance = np.linalg.norm(np.array(edge_positions[i][k]) - np.array(edge_positions[i - 1][j]))
-                    if dp[i - 1, j] + distance < dp[i, k]:
-                        dp[i, k] = dp[i - 1, j] + distance
-                        path[i, k] = j  # Store the previous edge index
-
-        # Always end at the upper edge of the last checkpoint
-        last_edge = 0  # Upper edge of the last checkpoint
-
-        # Backtrack to find the optimal path
-        optimal_path = []
-        for i in range(n - 1, -1, -1):
-            optimal_path.append(edge_positions[i][last_edge])
-            last_edge = path[i, last_edge]
-        
-        optimal_path.reverse()  # Reverse to get the correct order
-
-        return optimal_path
-
     
     def draw(self, map_scaled, zoom):
         if DEBUG:
-            for angle, vel, coords in zip(self.tempAngleList, self.tempVelList, self.track.lines):
+            for angle, vel, coords in zip(self.tempAngleList, self.tempVelList, self.optimSetpoints):
+                coords = Vector2(coords)
                 color = pygame.Color(0, 0, 0, 50)
                 textAngle  = self._font.render(f'{angle:.2f}', True, color)
                 textVel    = self._font.render(f'{vel:.2f}', True, color)
@@ -192,6 +204,10 @@ class DK(Bot):
                 map_scaled.blit(textAngle, (coords * zoom) - pygame.Vector2(25, 25))
                 map_scaled.blit(textVel, (coords * zoom) - pygame.Vector2(25, 10))
                 map_scaled.blit(textCurVel, (self.curPos * zoom) - pygame.Vector2(25, 25))
+
+            for coords in self.optimSetpoints:
+                BLUE =      (  0,   0, 255)
+                pygame.draw.circle(map_scaled, BLUE, (Vector2(coords) * zoom), 2)
     
     def compute_commands(self, next_waypoint: int, position: Transform, velocity: Vector2) -> Tuple:
 
@@ -249,6 +265,10 @@ class DK(Bot):
                 else:
                     throttle = -1
                     break
+
+        # steering = angle*0.1
+
+        # return throttle, steering
 
         if angle > 0:
             return throttle, 1
