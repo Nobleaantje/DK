@@ -12,7 +12,9 @@ def compute_curvature(x, y):
     dy_dt = np.gradient(y)
     d2x_dt2 = np.gradient(dx_dt)
     d2y_dt2 = np.gradient(dy_dt)
-    curvature = np.abs(d2x_dt2 * dy_dt - dx_dt * d2y_dt2) / (dx_dt**2 + dy_dt**2)**1.5
+    curvature = np.abs(dx_dt * d2y_dt2 - dy_dt * d2x_dt2) / (dx_dt**2 + dy_dt**2)**1.5
+    # curvature = np.abs(d2x_dt2 * dy_dt - dx_dt * d2y_dt2) / (dx_dt**2 + dy_dt**2)**1.5
+
     return curvature
 
 def compute_angles(checkpoints):
@@ -61,28 +63,52 @@ def raceline_objective(checkpoints, n_points=100):
     # raceline_x, raceline_y = spline(t_values)
     
     # Compute curvature
-    # curvature = compute_curvature(raceline_x, raceline_y)
+    # curvature = compute_curvature(x, y)
+    # curvature = [x*1000 for x in curvature]
+    # curvature = curvature*100
     # racelineCheckpoints = [raceline_x, raceline_y]
 
     curvature = 3.1415 - np.array(compute_angles(checkpoints))
+    angleList = np.array(compute_angles(checkpoints))
+
     tot_dist = 0
 
     tmpcheckpoint = checkpoints.reshape(-1, 2)
 
     nTargets = len(tmpcheckpoint)
 
+    time = 0
+    velPrev = 9999
 
-    for section in range(nTargets):
+    for section, angle in zip(range(nTargets),angleList):
         section1ID = (section ) % (nTargets - 1)
         section2ID = (section + 1 ) % (nTargets - 1)
+        sectionPrev = (section - 1 ) % (nTargets - 1)
+
+        acc = 100
 
         target1 = tmpcheckpoint[section1ID]
         target2 = tmpcheckpoint[section2ID]
+        targetPrev = tmpcheckpoint[sectionPrev]
+
+        distPrev = np.linalg.norm(target1 - targetPrev)
+
+        t = ((2*acc*distPrev + velPrev**2)**(1/2)-velPrev)/acc
+        velAcc = velPrev + acc*t
 
         tot_dist += np.linalg.norm(target2 - target1)
 
+        vel = ( angle / 3.1415 )**2 * 300
+
+
+
+        vel = min(vel,velAcc)
+        velPrev = vel
+        # Is this the correct calculation?
+        time += np.linalg.norm(target2 - target1) / vel
+
     # Minimize the sum of curvature
-    return np.sum(curvature**2)
+    return np.sum(time**2)
 
 def optimize_raceline(checkpoints, r, n_points=100):
     """
