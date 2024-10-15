@@ -78,7 +78,7 @@ def raceline_objective(checkpoints, n_points=100):
     nTargets = len(tmpcheckpoint)
 
     time = 0
-    velPrev = 9999
+    velPrev = 0
 
     for section, angle in zip(range(nTargets),angleList):
         section1ID = (section ) % (nTargets - 1)
@@ -91,24 +91,19 @@ def raceline_objective(checkpoints, n_points=100):
         target2 = tmpcheckpoint[section2ID]
         targetPrev = tmpcheckpoint[sectionPrev]
 
-        distPrev = np.linalg.norm(target1 - targetPrev)
+        dist = np.linalg.norm(target2 - target1)
 
-        t = ((2*acc*distPrev + velPrev**2)**(1/2)-velPrev)/acc
+        t = ((2*acc*dist + velPrev**2)**(1/2)-velPrev)/acc
         velAcc = velPrev + acc*t
 
         tot_dist += np.linalg.norm(target2 - target1)
 
-        vel = ( angle / 3.1415 )**2 * 300
+        time += dist / ((velAcc + velPrev)/2)
 
-
-
-        vel = min(vel,velAcc)
-        velPrev = vel
-        # Is this the correct calculation?
-        time += np.linalg.norm(target2 - target1) / vel
+        velPrev = min(velAcc,( angle / 3.1415 )**3 * 300)
 
     # Minimize the sum of curvature
-    return np.sum(time**2)
+    return np.sum(time)
 
 def optimize_raceline(checkpoints, r, n_points=100):
     """
